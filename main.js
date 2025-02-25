@@ -14,6 +14,7 @@
  * Note: Binding to port 53 may require elevated privileges.
  */
 
+import "dotenv/config";
 import { createSocket } from "dgram";
 import { decode, encode } from "dns-packet";
 import fetch from "node-fetch";
@@ -22,8 +23,11 @@ import * as Bottleneck from "bottleneck";
 
 // Configuration values
 // Use hostname to avoid TLS/SNI issues
-const DOH_URL = "https://1.1.1.1/dns-query";
+const DOH_URLS = ["https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"];
 const SOCKS_PROXY = "socks5://127.0.0.1:1080"; // Your SOCKS5 proxy address
+const agent = new SocksProxyAgent(SOCKS_PROXY, {
+  rejectUnauthorized: false,
+});
 
 // Create a UDP server socket
 const server = createSocket("udp4");
@@ -58,21 +62,21 @@ function updateTTLs(packet, elapsedSeconds) {
 // Helper: perform a fetch with retries and a timeout (per attempt)
 async function fetchWithRetry(url, options, retries = 3, timeout = 5000) {
   for (let attempt = 1; attempt <= retries; attempt++) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
     try {
       // Wrap the fetch call in the limiter.schedule
       const response = await limiter.schedule(() =>
         fetch(url, {
           ...options,
-          signal: controller.signal,
+          signal: AbortSignal.timeout(timeout),
         })
       );
-      clearTimeout(timer);
       return response;
     } catch (error) {
-      clearTimeout(timer);
-      console.warn(`Attempt ${attempt} failed: ${error.message}`);
+      console.warn(
+        `Attempt ${attempt} for ${
+          decode(options.body).questions[0].name
+        } failed: ${error.message}`
+      );
       if (attempt === retries) {
         throw error;
       }
@@ -130,38 +134,67 @@ server.on("message", async (msg, rinfo) => {
 
   // No valid cache entry, so query the DoH endpoint
   try {
-    console.log("Querying DoH for:", query.questions);
-    const agent = new SocksProxyAgent(SOCKS_PROXY, {
-      rejectUnauthorized: false,
-    });
+    let dohPacket;
+    let resolvedFrom8888;
+    if (query.questions.find((q) => q.name.indexOf(process.env.OMIT) != -1)) {
+      resolvedFrom8888 = await new Promise((resolve, reject) => {
+        const client = createSocket("udp4");
 
-    // Use fetchWithRetry to perform the DoH request with a 5s timeout per attempt
-    const response = await fetchWithRetry(
-      DOH_URL,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/dns-message",
-          Accept: "application/dns-message",
-        },
-        body: msg,
-        agent: agent,
-      },
-      3, // max 3 attempts
-      5000 // 5 seconds timeout per attempt
-    );
+        client.on("message", (response, rinfo) => {
+          try {
+            resolve(response);
+          } catch (err) {
+            console.error("Failed to decode 8.8.8.8 response:", err);
+          }
+          client.close();
+        });
 
-    if (!response.ok) {
-      throw new Error(`DoH query failed with status ${response.status}`);
+        client.on("error", (err) => {
+          console.error("8.8.8.8 client error:", err);
+          client.close();
+        });
+
+        client.send(msg, 53, "8.8.8.8", (err) => {
+          if (err) {
+            console.error("Error sending query to 8.8.8.8:", err);
+            client.close();
+          }
+        });
+      });
     }
 
-    const dohResponseBuffer = Buffer.from(await response.arrayBuffer());
-    let dohPacket;
-    try {
-      dohPacket = decode(dohResponseBuffer);
-    } catch (err) {
-      console.error("Failed to decode DoH response:", err);
-      return;
+    if (!resolvedFrom8888) {
+      console.log("Querying DoH for:", query.questions);
+
+      // Use fetchWithRetry to perform the DoH request with a 5s timeout per attempt
+      const response = await fetchWithRetry(
+        DOH_URLS[Math.floor(Math.random() * DOH_URLS.length)],
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/dns-message",
+            Accept: "application/dns-message",
+          },
+          body: msg,
+          agent: agent,
+        },
+        3, // max 3 attempts
+        5000 // 5 seconds timeout per attempt
+      );
+
+      if (!response.ok) {
+        throw new Error(`DoH query failed with status ${response.status}`);
+      }
+
+      const dohResponseBuffer = Buffer.from(await response.arrayBuffer());
+      try {
+        dohPacket = decode(dohResponseBuffer);
+      } catch (err) {
+        console.error("Failed to decode DoH response:", err);
+        return;
+      }
+    } else {
+      dohPacket = decode(resolvedFrom8888);
     }
 
     // Cache the decoded DNS response along with the current timestamp

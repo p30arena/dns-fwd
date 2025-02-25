@@ -12,6 +12,7 @@
   "dependencies": {
     "bottleneck": "^2.19.5",
     "dns-packet": "^5.6.1",
+    "dotenv": "^16.4.7",
     "node-fetch": "^3.3.2",
     "socks-proxy-agent": "^8.0.5"
   }
