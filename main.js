@@ -107,29 +107,34 @@ server.on("message", async (msg, rinfo) => {
 
   // Check if we have a valid cached response
   const cached = cache[cacheKey];
-  if (cached) {
-    const elapsedSeconds = (Date.now() - cached.timestamp) / 1000;
-    // Determine the minimum TTL among all answer records in the cached packet
-    const originalTTLs = cached.packet.answers.map((answer) => answer.ttl);
-    const minTTL = Math.min(...originalTTLs);
+  try {
+    if (cached) {
+      const elapsedSeconds = (Date.now() - cached.timestamp) / 1000;
+      // Determine the minimum TTL among all answer records in the cached packet
+      const originalTTLs = cached.packet.answers.map((answer) => answer.ttl);
+      const minTTL = Math.min(...originalTTLs);
 
-    if (elapsedSeconds < minTTL) {
-      // Cache is still valid; create a deep copy of the cached packet
-      const cachedPacket = JSON.parse(JSON.stringify(cached.packet));
-      // Update TTLs to account for the elapsed time
-      updateTTLs(cachedPacket, elapsedSeconds);
-      // Set the header ID to match the client's query
-      cachedPacket.id = query.id;
-      const responseBuffer = encode(cachedPacket);
-      console.log("Serving response from cache.");
-      server.send(responseBuffer, rinfo.port, rinfo.address, (err) => {
-        if (err) console.error("Error sending cached response:", err);
-      });
-      return;
-    } else {
-      console.log("Cache expired for key:", cacheKey);
-      delete cache[cacheKey];
+      if (elapsedSeconds < minTTL) {
+        // Cache is still valid; create a deep copy of the cached packet
+        const cachedPacket = JSON.parse(JSON.stringify(cached.packet));
+        // Update TTLs to account for the elapsed time
+        updateTTLs(cachedPacket, elapsedSeconds);
+        // Set the header ID to match the client's query
+        cachedPacket.id = query.id;
+        const responseBuffer = encode(cachedPacket);
+        console.log("Serving response from cache.");
+        server.send(responseBuffer, rinfo.port, rinfo.address, (err) => {
+          if (err) console.error("Error sending cached response:", err);
+        });
+        return;
+      } else {
+        console.log("Cache expired for key:", cacheKey);
+        delete cache[cacheKey];
+      }
     }
+  } catch (e) {
+    console.error(e);
+    // if had errors, continue with non-cache
   }
 
   // No valid cache entry, so query the DoH endpoint
