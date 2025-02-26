@@ -1,2 +1,2 @@
 create an .env file
-OMIT={DOMAIN TO OMIT}
+BYPASS_DOMAINS=Comma Separated Domains or Keywords

@@ -21,6 +21,8 @@ import fetch from "node-fetch";
 import { SocksProxyAgent } from "socks-proxy-agent";
 import * as Bottleneck from "bottleneck";
 
+const bypassDomains = process.env.BYPASS_DOMAINS.split(",");
+
 // Configuration values
 // Use hostname to avoid TLS/SNI issues
 const DOH_URLS = ["https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"];
@@ -141,7 +143,11 @@ server.on("message", async (msg, rinfo) => {
   try {
     let dohPacket;
     let resolvedFrom8888;
-    if (query.questions.find((q) => q.name.indexOf(process.env.OMIT) != -1)) {
+    if (
+      query.questions.find((q) =>
+        bypassDomains.find((domain) => q.name.indexOf(domain) != -1)
+      )
+    ) {
       resolvedFrom8888 = await new Promise((resolve, reject) => {
         const client = createSocket("udp4");
 
