@@ -129,6 +129,7 @@ server.on("message", async (msg, rinfo) => {
         cachedPacket.id = query.id;
         const responseBuffer = encode(cachedPacket);
         console.log("Serving response from cache.");
+        console.log("Cache Result:", cachedPacket.answers);
         server.send(responseBuffer, rinfo.port, rinfo.address, (err) => {
           if (err) console.error("Error sending cached response:", err);
         });
@@ -221,6 +222,7 @@ server.on("message", async (msg, rinfo) => {
     // Update the response packet header to match the client's query ID
     dohPacket.id = query.id;
     const responseBuffer = encode(dohPacket);
+    console.log("DoH Result:", dohPacket.answers);
     server.send(responseBuffer, rinfo.port, rinfo.address, (err) => {
       if (err) console.error("Error sending response:", err);
     });
