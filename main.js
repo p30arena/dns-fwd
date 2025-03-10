@@ -25,7 +25,11 @@ const bypassDomains = process.env.BYPASS_DOMAINS.split(",");
 
 // Configuration values
 // Use hostname to avoid TLS/SNI issues
-const DOH_URLS = ["https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"];
+const DOH_URLS = [
+  "https://1.1.1.1/dns-query",
+  "https://8.8.8.8/dns-query",
+  "https://8.8.4.4/dns-query",
+];
 const SOCKS_PROXY = "socks5://127.0.0.1:1080"; // Your SOCKS5 proxy address
 const agent = new SocksProxyAgent(SOCKS_PROXY, {
   rejectUnauthorized: false,
